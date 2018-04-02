@@ -38,6 +38,7 @@ module Streamly.Prelude
 
     -- ** Special Folds
     , toList
+    , listToStream
     , all
     , any
     , head
@@ -256,6 +257,13 @@ toHandle h m = go (toStream m)
 {-# INLINABLE toList #-}
 toList :: (Streaming t, Monad m) => t m a -> m [a]
 toList = foldrM (\a xs -> return (a : xs)) []
+
+{-# INLINABLE listToStream #-}
+listToStream :: (Streaming t) => [a] -> t m a
+listToStream l = fromStream (go l)
+  where
+    go []     = snil
+    go (x:xs) = scons x (Just (go xs))
 
 -- | Take first 'n' elements from the stream and discard the rest.
 {-# INLINE take #-}
