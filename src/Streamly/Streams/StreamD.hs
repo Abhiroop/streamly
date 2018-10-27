@@ -118,7 +118,8 @@ module Streamly.Streams.StreamD
     )
 where
 
-import Data.Maybe (fromJust, isJust)
+import Control.Monad (liftM2)
+import Data.Maybe (fromJust, isJust, maybe)
 import GHC.Types ( SPEC(..) )
 import Prelude
        hiding (map, mapM, mapM_, repeat, foldr, last, take, filter,
@@ -135,11 +136,12 @@ import qualified Streamly.Streams.StreamK as K
 -- | A stream is a succession of 'Step's. A 'Yield' produces a single value and
 -- the next state of the stream. 'Stop' indicates there are no more values in
 -- the stream.
-data Step s a = Yield a s | Stop
+data Step s a = Yield a s | Skip s | Stop
 
 instance Functor (Step s) where
     {-# INLINE fmap #-}
     fmap f (Yield x s) = Yield (f x) s
+    fmap _ (Skip s) = Skip s
     fmap _ Stop = Stop
 
 -- gst = global state
@@ -165,6 +167,7 @@ cons x (Stream step state) = Stream step1 Nothing
         r <- step (rstState gst) st
         case r of
             Yield a s -> return $ Yield a (Just s)
+            Skip s -> return $ Skip (Just s)
             Stop -> return Stop
 
 -------------------------------------------------------------------------------
@@ -178,9 +181,10 @@ uncons (Stream step state) = go state
   where
     go st = do
         r <- step defState st
-        return $ case r of
-            Yield x s -> Just (x, Stream step s)
-            Stop      -> Nothing
+        case r of
+            Yield x s -> return $ Just (x, Stream step s)
+            Skip  s   -> go s
+            Stop      -> return Nothing
 
 ------------------------------------------------------------------------------
 -- Generation by unfold
@@ -281,6 +285,7 @@ foldrM f z (Stream step state) = go SPEC state
           r <- step defState st
           case r of
             Yield x s -> go SPEC s >>= f x
+            Skip s    -> go SPEC s
             Stop      -> return z
 
 {-# INLINE_NORMAL foldr #-}
@@ -297,7 +302,8 @@ foldlM' fstep begin (Stream step state) = go SPEC begin state
             Yield x s -> do
                 acc' <- fstep acc x
                 go SPEC acc' s
-            Stop -> return acc
+            Skip s -> go SPEC acc s
+            Stop   -> return acc
 
 {-# INLINE foldl' #-}
 foldl' :: Monad m => (b -> a -> b) -> b -> Stream m a -> m b
@@ -316,6 +322,7 @@ runStream (Stream step state) = go SPEC state
         r <- step defState st
         case r of
             Yield _ s -> go SPEC s
+            Skip s    -> go SPEC s
             Stop      -> return ()
 
 {-# INLINE_NORMAL null #-}
@@ -326,7 +333,8 @@ null (Stream step state) = go state
         r <- step defState st
         case r of
             Yield _ _ -> return False
-            Stop -> return True
+            Skip s    -> go s
+            Stop      -> return True
 
 -- XXX SPEC?
 {-# INLINE_NORMAL head #-}
@@ -337,7 +345,8 @@ head (Stream step state) = go state
         r <- step defState st
         case r of
             Yield x _ -> return (Just x)
-            Stop -> return Nothing
+            Skip  s   -> go s
+            Stop      -> return Nothing
 
 -- Does not fuse, has the same performance as the StreamK version.
 {-# INLINE_NORMAL tail #-}
@@ -348,7 +357,8 @@ tail (Stream step state) = go state
         r <- step defState st
         case r of
             Yield _ s -> return (Just $ Stream step s)
-            Stop -> return Nothing
+            Skip  s   -> go s
+            Stop      -> return Nothing
 
 -- XXX will it fuse? need custom impl?
 {-# INLINE_NORMAL last #-}
@@ -362,37 +372,40 @@ elem e (Stream step state) = go state
     go st = do
         r <- step defState st
         case r of
-            Yield x s ->
-                if x == e
-                then return True
-                else go s
-            Stop -> return False
+            Yield x s
+              | x == e    -> return True
+              | otherwise -> go s
+            Skip s -> go s
+            Stop   -> return False
 
 {-# INLINE_NORMAL notElem #-}
 notElem :: (Monad m, Eq a) => a -> Stream m a -> m Bool
-notElem e (Stream step state) = go state
-  where
-    go st = do
-        r <- step defState st
-        case r of
-            Yield x s ->
-                if x == e
-                then return False
-                else go s
-            Stop -> return True
+notElem e s = fmap not (elem e s)
 
+{-
+With and :: Stream m Bool -> m Bool
+
+we can have
+
+all p = and . map p
+-}
 {-# INLINE_NORMAL all #-}
 all :: Monad m => (a -> Bool) -> Stream m a -> m Bool
-all p (Stream step state) = go state
+all p s =
+  (uncons s) >>= (maybe (return True) go)
   where
-    go st = do
-        r <- step defState st
-        case r of
-            Yield x s ->
-                if p x
-                then go s
-                else return False
-            Stop -> return True
+    go (hd, tl) = liftM2 (&&) (return $ p hd) (all p tl)
+-- all p (Stream step state) = go state
+--   where
+--     go st = do
+--         r <- step defState st
+--         case r of
+--             Yield x s ->
+--                 if p x
+--                 then go s
+--                 else return False
+--             Skip s -> go s
+--             Stop   -> return True
 
 {-# INLINE_NORMAL any #-}
 any :: Monad m => (a -> Bool) -> Stream m a -> m Bool
@@ -405,7 +418,8 @@ any p (Stream step state) = go state
                 if p x
                 then return True
                 else go s
-            Stop -> return False
+            Skip s -> go s
+            Stop   -> return False
 
 {-# INLINE_NORMAL maximum #-}
 maximum :: (Monad m, Ord a) => Stream m a -> m (Maybe a)
@@ -415,7 +429,8 @@ maximum (Stream step state) = go Nothing state
         r <- step defState st
         case r of
             Yield x s -> go (Just x) s
-            Stop -> return Nothing
+            Skip  s   -> go Nothing s
+            Stop      -> return Nothing
     go (Just acc) st = do
         r <- step defState st
         case r of
@@ -423,7 +438,8 @@ maximum (Stream step state) = go Nothing state
                 if acc <= x
                 then go (Just x) s
                 else go (Just acc) s
-            Stop -> return (Just acc)
+            Skip s -> go (Just acc) s
+            Stop   -> return (Just acc)
 
 {-# INLINE_NORMAL minimum #-}
 minimum :: (Monad m, Ord a) => Stream m a -> m (Maybe a)
@@ -433,7 +449,8 @@ minimum (Stream step state) = go Nothing state
         r <- step defState st
         case r of
             Yield x s -> go (Just x) s
-            Stop -> return Nothing
+            Skip  s   -> go Nothing s
+            Stop      -> return Nothing
     go (Just acc) st = do
         r <- step defState st
         case r of
@@ -441,7 +458,8 @@ minimum (Stream step state) = go Nothing state
                 if acc <= x
                 then go (Just acc) s
                 else go (Just x) s
-            Stop -> return (Just acc)
+            Skip s -> go (Just acc) s
+            Stop   -> return (Just acc)
 
 ------------------------------------------------------------------------------
 -- Map and Fold
@@ -460,6 +478,7 @@ mapM_ m = runStream . mapM m
 toList :: Monad m => Stream m a -> m [a]
 toList = foldr (:) []
 
+-- XXX Need to add a corresponding *skip* argument to the CPS form
 -- Convert a direct stream to and from CPS encoded stream
 {-# INLINE_LATE toStreamK #-}
 toStreamK :: Monad m => Stream m a -> K.Stream m a
@@ -494,7 +513,8 @@ postscanlM' fstep begin (Stream step state) =
             Yield x s -> do
                 y <- fstep acc x
                 y `seq` return (Yield y (s, y))
-            Stop -> return Stop
+            Skip s -> return $ Skip (s, acc)
+            Stop   -> return Stop
 
 {-# INLINE scanlM' #-}
 scanlM' :: Monad m => (b -> a -> m b) -> b -> Stream m a -> Stream m b
@@ -513,6 +533,7 @@ take n (Stream step state) = n `seq` Stream step' (state, 0)
         r <- step (rstState gst) st
         return $ case r of
             Yield x s -> Yield x (s, i + 1)
+            Skip s    -> Skip (s, i)
             Stop      -> Stop
     step' _ (_, _) = return Stop
 
@@ -527,7 +548,8 @@ takeWhileM f (Stream step state) = Stream step' state
             Yield x s -> do
                 b <- f x
                 return $ if b then Yield x s else Stop
-            Stop -> return Stop
+            Skip s -> return $ Skip s
+            Stop   -> return Stop
 
 {-# INLINE takeWhile #-}
 takeWhile :: Monad m => (a -> Bool) -> Stream m a -> Stream m a
@@ -587,10 +609,11 @@ filterM f (Stream step state) = Stream step' state
         case r of
             Yield x s -> do
                 b <- f x
-                if b
-                then return $ Yield x s
-                else step' gst s
-            Stop -> return Stop
+                return $ if b
+                         then Yield x s
+                         else Skip s
+            Skip s -> return $ Skip s
+            Stop   -> return Stop
 
 {-# INLINE filter #-}
 filter :: Monad m => (a -> Bool) -> Stream m a -> Stream m a
@@ -610,6 +633,7 @@ mapM f (Stream step state) = Stream step' state
         r <- step (rstState gst) st
         case r of
             Yield x s -> f x >>= \a -> return $ Yield a s
+            Skip s    -> return $ Skip s
             Stop      -> return Stop
 
 {-# INLINE map #-}
