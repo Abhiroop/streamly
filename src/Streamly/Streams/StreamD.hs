@@ -7,7 +7,7 @@
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE RankNTypes                #-}
 
-#include "inline.h"
+#include "inline.hs"
 
 -- |
 -- Module      : Streamly.Streams.StreamD
@@ -563,8 +563,9 @@ drop n (Stream step state) = Stream step' (state, n)
     step' gst (st, i) = do
         r <- step (rstState gst) st
         case r of
-            Yield _ s | i > 0 -> step' gst (s, i - 1)
+            Yield _ s | i > 0 -> return $ Skip (s, i - 1)
             Yield x s -> return $ Yield x (s, 0)
+            Skip s    -> return $ Skip (s, i)
             Stop      -> return Stop
 
 data DropWhileState s a
@@ -583,14 +584,16 @@ dropWhileM f (Stream step state) = Stream step' (DropWhileDrop state)
             Yield x s -> do
                 b <- f x
                 if b
-                then step' gst (DropWhileDrop s)
-                else step' gst (DropWhileYield x s)
+                then return $ Skip (DropWhileDrop s)
+                else return $ Skip (DropWhileYield x s)
+            Skip s -> return $ Skip (DropWhileDrop s)
             Stop -> return Stop
 
     step' gst (DropWhileNext st) =  do
         r <- step (rstState gst) st
         case r of
-            Yield x s -> step' gst (DropWhileYield x s)
+            Yield x s -> return $ Skip (DropWhileYield x s)
+            Skip s    -> return $ Skip (DropWhileNext s)
             Stop      -> return Stop
 
     step' _ (DropWhileYield x st) = return $ Yield x (DropWhileNext st)

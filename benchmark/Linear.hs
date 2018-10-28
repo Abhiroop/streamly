@@ -40,7 +40,7 @@ main :: IO ()
 main =
   defaultMain
     [ bgroup "serially"
-      [ bgroup "generation"
+      [ {-bgroup "generation"
         [ -- Most basic, barely stream continuations running
           benchSrcIO serially "unfoldr" Ops.sourceUnfoldr
         , benchSrcIO serially "unfoldrM" Ops.sourceUnfoldrM
@@ -95,8 +95,8 @@ main =
         , benchIO "findIndices" Ops.findIndices
         , benchIO "elemIndices" Ops.elemIndices
         -- , benchIO "concat" Ops.concat
-        ]
-      , bgroup "filtering"
+        ]-}
+      bgroup "filtering"
         [ benchIO "filter-even" Ops.filterEven
         , benchIO "filter-all-out" Ops.filterAllOut
         , benchIO "filter-all-in" Ops.filterAllIn
@@ -106,7 +106,7 @@ main =
         , benchIO "drop-all" Ops.dropAll
         , benchIO "dropWhile-true" Ops.dropWhileTrue
         , benchIO "dropWhileM-true" Ops.dropWhileMTrue
-        ]
+        ]{-
       , benchIO "zip" Ops.zip
       , benchIO "zipM" Ops.zipM
       , bgroup "compose"
@@ -121,6 +121,6 @@ main =
         , benchIO "2" $ Ops.composeScaling 2
         , benchIO "3" $ Ops.composeScaling 3
         , benchIO "4" $ Ops.composeScaling 4
-        ]
+        ]-}
       ]
       ]
