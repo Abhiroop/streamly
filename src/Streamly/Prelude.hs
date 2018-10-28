@@ -696,14 +696,14 @@ any p m = S.any p (toStreamS m)
 -- @since 0.5.0
 {-# INLINE and #-}
 and :: Monad m => SerialT m Bool -> m Bool
-and = all (==True)
+and = S.and . toStreamS
 
 -- | Determines wheter at least one element of a boolean stream is True.
 --
 -- @since 0.5.0
 {-# INLINE or #-}
 or :: Monad m => SerialT m Bool -> m Bool
-or = any (==True)
+or = S.or . toStreamS
 
 -- | Determine the sum of all elements of a stream of numbers
 --

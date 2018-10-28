@@ -70,6 +70,8 @@ module Streamly.Streams.StreamD
     , foldlM'
 
     -- ** Specialized Folds
+    , and
+    , or
     , runStream
     , null
     , head
@@ -121,7 +123,7 @@ where
 import Data.Maybe (fromJust, isJust)
 import GHC.Types ( SPEC(..) )
 import Prelude
-       hiding (map, mapM, mapM_, repeat, foldr, last, take, filter,
+       hiding (map, mapM, mapM_, repeat, foldr, last, take, filter, and, or,
                takeWhile, drop, dropWhile, all, any, maximum, minimum, elem,
                notElem, null, head, tail, zipWith)
 
@@ -306,6 +308,30 @@ foldl' fstep = foldlM' (\b a -> return (fstep b a))
 ------------------------------------------------------------------------------
 -- Specialized Folds
 ------------------------------------------------------------------------------
+
+and :: Monad m => Stream m Bool -> m Bool
+{-# INLINE_NORMAL and #-}
+and (Stream step state) = go SPEC state
+  where
+    go !_ st
+      = do
+          r <- step defState st
+          case r of
+            Yield False _  -> return False
+            Yield True  s  -> go SPEC s
+            Stop           -> return True
+
+or :: Monad m => Stream m Bool -> m Bool
+{-# INLINE_NORMAL or #-}
+or (Stream step state) = go SPEC state
+  where
+    go !_ st
+      = do
+          r <- step defState st
+          case r of
+            Yield False s -> go SPEC s
+            Yield True  _  -> return True
+            Stop           -> return False
 
 -- | Run a streaming composition, discard the results.
 {-# INLINE_LATE runStream #-}
