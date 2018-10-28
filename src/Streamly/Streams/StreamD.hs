@@ -118,8 +118,7 @@ module Streamly.Streams.StreamD
     )
 where
 
-import Control.Monad (liftM2)
-import Data.Maybe (fromJust, isJust, maybe)
+import Data.Maybe (fromJust, isJust)
 import GHC.Types ( SPEC(..) )
 import Prelude
        hiding (map, mapM, mapM_, repeat, foldr, last, take, filter,
@@ -391,21 +390,17 @@ all p = and . map p
 -}
 {-# INLINE_NORMAL all #-}
 all :: Monad m => (a -> Bool) -> Stream m a -> m Bool
-all p s =
-  (uncons s) >>= (maybe (return True) go)
+all p (Stream step state) = go state
   where
-    go (hd, tl) = liftM2 (&&) (return $ p hd) (all p tl)
--- all p (Stream step state) = go state
---   where
---     go st = do
---         r <- step defState st
---         case r of
---             Yield x s ->
---                 if p x
---                 then go s
---                 else return False
---             Skip s -> go s
---             Stop   -> return True
+    go st = do
+        r <- step defState st
+        case r of
+            Yield x s ->
+                if p x
+                then go s
+                else return False
+            Skip s -> go s
+            Stop   -> return True
 
 {-# INLINE_NORMAL any #-}
 any :: Monad m => (a -> Bool) -> Stream m a -> m Bool
