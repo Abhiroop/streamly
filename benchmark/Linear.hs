@@ -96,7 +96,7 @@ main =
         , benchIO "elemIndices" Ops.elemIndices
         -- , benchIO "concat" Ops.concat
         ]
-      bgroup "filtering"
+      , bgroup "filtering"
         [ benchIO "filter-even" Ops.filterEven
         , benchIO "filter-all-out" Ops.filterAllOut
         , benchIO "filter-all-in" Ops.filterAllIn
