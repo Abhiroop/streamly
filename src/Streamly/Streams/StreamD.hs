@@ -166,8 +166,8 @@ cons x (Stream step state) = Stream step1 Nothing
         r <- step (rstState gst) st
         case r of
             Yield a s -> return $ Yield a (Just s)
-            Skip s -> return $ Skip (Just s)
-            Stop -> return Stop
+            Skip  s   -> return $ Skip (Just s)
+            Stop      -> return Stop
 
 -------------------------------------------------------------------------------
 -- Deconstruction
@@ -479,10 +479,11 @@ toList = foldr (:) []
 toStreamK :: Monad m => Stream m a -> K.Stream m a
 toStreamK (Stream step state) = go state
     where
-    go st = K.Stream $ \gst stp _ yld -> do
+    go st = K.Stream $ \gst stp sng yld -> do
         r <- step gst st
         case r of
             Yield x s -> yld x (go s)
+            Skip  s   -> K.unStream (go s) gst stp sng yld
             Stop      -> stp
 
 #ifndef DISABLE_FUSION
@@ -663,9 +664,11 @@ zipWithM f (Stream stepa ta) (Stream stepb tb) = Stream step (ta, tb, Nothing)
     {-# INLINE_LATE step #-}
     step gst (sa, sb, Nothing) = do
         r <- stepa (rstState gst) sa
-        case r of
-            Yield x sa' -> step gst (sa', sb, Just x)
-            Stop        -> return Stop
+        return $
+          case r of
+            Yield x sa' -> Skip (sa', sb, Just x)
+            Skip sa'    -> Skip (sa', sb, Nothing) 
+            Stop        -> Stop
 
     step gst (sa, sb, Just x) = do
         r <- stepb (rstState gst) sb
@@ -673,7 +676,8 @@ zipWithM f (Stream stepa ta) (Stream stepb tb) = Stream step (ta, tb, Nothing)
             Yield y sb' -> do
                 z <- f x y
                 return $ Yield z (sa, sb', Nothing)
-            Stop -> return Stop
+            Skip sb' -> return $ Skip (sa, sb', Just x)
+            Stop     -> return $ Stop
 
 {-# RULES "zipWithM xs xs"
     forall f xs. zipWithM f xs xs = mapM (\x -> f x x) xs #-}
