@@ -164,10 +164,11 @@ cons x (Stream step state) = Stream step1 Nothing
     step1 _ Nothing   = return $ Yield x (Just state)
     step1 gst (Just st) = do
         r <- step (rstState gst) st
-        case r of
-            Yield a s -> return $ Yield a (Just s)
-            Skip  s   -> return $ Skip (Just s)
-            Stop      -> return Stop
+        return $
+          case r of
+            Yield a s -> Yield a (Just s)
+            Skip  s   -> Skip (Just s)
+            Stop      -> Stop
 
 -------------------------------------------------------------------------------
 -- Deconstruction
@@ -381,13 +382,6 @@ elem e (Stream step state) = go state
 notElem :: (Monad m, Eq a) => a -> Stream m a -> m Bool
 notElem e s = fmap not (elem e s)
 
-{-
-With and :: Stream m Bool -> m Bool
-
-we can have
-
-all p = and . map p
--}
 {-# INLINE_NORMAL all #-}
 all :: Monad m => (a -> Bool) -> Stream m a -> m Bool
 all p (Stream step state) = go state
@@ -395,10 +389,9 @@ all p (Stream step state) = go state
     go st = do
         r <- step defState st
         case r of
-            Yield x s ->
-                if p x
-                then go s
-                else return False
+            Yield x s
+              | p x       -> go s
+              | otherwise -> return False
             Skip s -> go s
             Stop   -> return True
 
@@ -409,10 +402,9 @@ any p (Stream step state) = go state
     go st = do
         r <- step defState st
         case r of
-            Yield x s ->
-                if p x
-                then return True
-                else go s
+            Yield x s
+              | p x       -> return True
+              | otherwise -> go s
             Skip s -> go s
             Stop   -> return False
 
@@ -429,10 +421,9 @@ maximum (Stream step state) = go Nothing state
     go (Just acc) st = do
         r <- step defState st
         case r of
-            Yield x s ->
-                if acc <= x
-                then go (Just x) s
-                else go (Just acc) s
+            Yield x s
+              | acc <= x  -> go (Just x) s
+              | otherwise -> go (Just acc) s
             Skip s -> go (Just acc) s
             Stop   -> return (Just acc)
 
@@ -449,10 +440,9 @@ minimum (Stream step state) = go Nothing state
     go (Just acc) st = do
         r <- step defState st
         case r of
-            Yield x s ->
-                if acc <= x
-                then go (Just acc) s
-                else go (Just x) s
+            Yield x s
+              | acc <= x  -> go (Just acc) s
+              | otherwise -> go (Just x) s
             Skip s -> go (Just acc) s
             Stop   -> return (Just acc)
 
@@ -473,7 +463,6 @@ mapM_ m = runStream . mapM m
 toList :: Monad m => Stream m a -> m [a]
 toList = foldr (:) []
 
--- XXX Need to add a corresponding *skip* argument to the CPS form
 -- Convert a direct stream to and from CPS encoded stream
 {-# INLINE_LATE toStreamK #-}
 toStreamK :: Monad m => Stream m a -> K.Stream m a
@@ -677,7 +666,7 @@ zipWithM f (Stream stepa ta) (Stream stepb tb) = Stream step (ta, tb, Nothing)
                 z <- f x y
                 return $ Yield z (sa, sb', Nothing)
             Skip sb' -> return $ Skip (sa, sb', Just x)
-            Stop     -> return $ Stop
+            Stop     -> return Stop
 
 {-# RULES "zipWithM xs xs"
     forall f xs. zipWithM f xs xs = mapM (\x -> f x x) xs #-}
