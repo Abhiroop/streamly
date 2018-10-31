@@ -518,8 +518,8 @@ take n (Stream step state) = n `seq` Stream step' (state, Nothing)
       | i < n = do
         r <- step (rstState gst) st
         return $ case r of
-            Yield x s -> Yield x (s, i + 1)
-            Skip s    -> Skip (s, i)
+            Yield x s -> Yield x (s, Just $ i + 1)
+            Skip s    -> Skip (s, Just i)
             Stop      -> Stop
       | otherwise = return Stop
     step' gst (st, Nothing) = do
