@@ -542,16 +542,26 @@ takeWhile f = takeWhileM (return . f)
 
 {-# INLINE_NORMAL drop #-}
 drop :: Monad m => Int -> Stream m a -> Stream m a
-drop n (Stream step state) = Stream step' (state, n)
+drop n (Stream step state) = Stream step' (state, Just n)
   where
     {-# INLINE_LATE step' #-}
-    step' gst (st, i) = do
-        r <- step (rstState gst) st
+    step' gst (st, Just i)
+      | i > 0 = do
+          r <- step (rstState gst) st
+          return $
+            case r of
+              Yield _ s -> Skip (s, Just (i - 1))
+              Skip s    -> Skip (s, Just i)
+              Stop      -> Stop
+      | otherwise = return $ Skip (st, Nothing)
+
+    step' gst (st, Nothing) = do
+      r <- step (rstState gst) st
+      return $
         case r of
-            Yield _ s | i > 0 -> return $ Skip (s, i - 1)
-            Yield x s -> return $ Yield x (s, 0)
-            Skip s    -> return $ Skip (s, i)
-            Stop      -> return Stop
+          Yield x s -> Yield x (s, Nothing)
+          Skip  s   -> Skip (s, Nothing)
+          Stop      -> Stop
 
 data DropWhileState s a
     = DropWhileDrop s
