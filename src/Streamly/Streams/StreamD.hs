@@ -511,16 +511,24 @@ scanlM' fstep begin s = begin `seq` (begin `cons` postscanlM' fstep begin s)
 
 {-# INLINE_NORMAL take #-}
 take :: Monad m => Int -> Stream m a -> Stream m a
-take n (Stream step state) = n `seq` Stream step' (state, 0)
+take n (Stream step state) = n `seq` Stream step' (state, Nothing)
   where
     {-# INLINE_LATE step' #-}
-    step' gst (st, i) | i < n = do
+    step' gst (st, Just i)
+      | i < n = do
         r <- step (rstState gst) st
         return $ case r of
             Yield x s -> Yield x (s, i + 1)
             Skip s    -> Skip (s, i)
             Stop      -> Stop
-    step' _ (_, _) = return Stop
+      | otherwise = return Stop
+    step' gst (st, Nothing) = do
+      r <- step (rstState gst) st
+      return $
+        case r of
+          Yield x s -> Yield x (s, Just 1)
+          Skip s    -> Skip (s, Nothing)
+          Stop      -> Stop
 
 {-# INLINE_NORMAL takeWhileM #-}
 takeWhileM :: Monad m => (a -> m Bool) -> Stream m a -> Stream m a
